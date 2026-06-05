@@ -1,9 +1,9 @@
 // Vercel Serverless Function — GET /api/deputes
+// Sources data from Assemblée Nationale open data CSV (with group info)
 import https from 'https'
-import AdmZip from 'adm-zip'
 
-const DEPUTES_URL =
-  'https://data.assemblee-nationale.fr/static/openData/repository/17/amo/deputes_actifs_mandats_actifs_organes/AMO10_deputes_actifs_mandats_actifs_organes.json.zip'
+const CSV_URL =
+  'https://data.assemblee-nationale.fr/static/openData/repository/17/amo/deputes_actifs_csv_opendata/liste_deputes_libre_office.csv'
 
 let cache = null
 let cacheTime = 0
@@ -19,46 +19,45 @@ function fetchBuffer(url) {
   })
 }
 
-function extractDepute(entry) {
-  try {
-    const obj = JSON.parse(entry.getData().toString('utf-8'))
-    const a = obj?.acteur
-    if (!a) return null
+function parseCSV(text) {
+  const lines = text.trim().split('\n')
+  if (lines.length < 2) return []
 
-    const ident = a.etatCivil?.ident || {}
-    const naissance = a.etatCivil?.infoNaissance || {}
-
-    const mandats = a.mandats?.mandat || []
-    const mandat = Array.isArray(mandats)
-      ? mandats.find((m) => m?.viMoDe?.dateFin === null || m?.viMoDe?.dateFin === '')
-      : null
-
-    let groupe = 'Non-Inscrit'
-    if (mandat) {
-      const orgRef = mandat.organes?.organeRef
-      if (typeof orgRef === 'string') groupe = orgRef
-      else if (orgRef?.['#text']) groupe = orgRef['#text']
+  // Parse header respecting quotes
+  function parseLine(line) {
+    const fields = []
+    let current = ''
+    let inQuotes = false
+    for (const ch of line) {
+      if (ch === '"') { inQuotes = !inQuotes; continue }
+      if (ch === ',' && !inQuotes) { fields.push(current.trim()); current = ''; continue }
+      current += ch
     }
-
-    return {
-      uid: a.uid?.['#text'] || a.uid || '',
-      prenom: ident.prenom || '',
-      nom: ident.nom || '',
-      civ: ident.civ || '',
-      trigramme: ident.trigramme || '',
-      dateNaissance: naissance.dateNais || '',
-      departement: naissance.depNais || '',
-      groupe,
-      mandat: mandat ? {
-        libelle: mandat.libelle || '',
-        libelleAbrege: mandat.libelleAbrege || '',
-        dateDebut: mandat.viMoDe?.dateDebut || '',
-        legislature: mandat.legislature || '',
-      } : null,
-    }
-  } catch {
-    return null
+    fields.push(current.trim())
+    return fields
   }
+
+  const headers = parseLine(lines[0])
+  const results = []
+
+  for (let i = 1; i < lines.length; i++) {
+    const fields = parseLine(lines[i])
+    if (fields.length < 9) continue
+
+    results.push({
+      uid: fields[0] || '',
+      prenom: fields[1] || '',
+      nom: fields[2] || '',
+      region: fields[3] || '',
+      departement: fields[4] || '',
+      circo: fields[5] || '',
+      profession: fields[6] || '',
+      groupe: fields[7] || fields[8] || 'Non-Inscrit',
+      groupeAbrege: fields[8] || fields[7] || 'NI',
+    })
+  }
+
+  return results
 }
 
 export default async function handler(req, res) {
@@ -72,11 +71,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const zipBuf = await fetchBuffer(DEPUTES_URL)
-    const zip = new AdmZip(zipBuf)
-    const entries = zip.getEntries().filter((e) => e.entryName.endsWith('.json'))
-
-    const deputes = entries.map(extractDepute).filter(Boolean)
+    const buf = await fetchBuffer(CSV_URL)
+    const deputes = parseCSV(buf.toString('utf-8'))
 
     cache = { deputes, count: deputes.length }
     cacheTime = now

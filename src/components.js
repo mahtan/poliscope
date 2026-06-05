@@ -169,23 +169,23 @@ export function HomeView() {
 
 // ─── Depute Card ──────────────────────────────────────────
 export function DeputeCard(d) {
-  const grp = getGroupInfo(d.groupe)
+  const grp = getGroupInfo(d.groupe, d.groupeAbrege)
   return `
-    <div class="glass glass-hover rounded-xl p-4 cursor-pointer fade-in" data-depute="${d.id || d.uid}">
+    <div class="glass glass-hover rounded-xl p-4 cursor-pointer fade-in" data-depute="${d.uid}">
       <div class="flex items-start gap-3">
-        <div class="w-12 h-12 rounded-full bg-gradient-to-br ${grp.color} flex items-center justify-center text-lg font-bold text-white shrink-0"
+        <div class="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white shrink-0"
              style="background: ${grp.color}">
           ${(d.prenom || '?')[0]}${(d.nom || '?')[0]}
         </div>
         <div class="flex-1 min-w-0">
           <div class="font-semibold text-sm truncate">${d.prenom || ''} ${d.nom || 'Inconnu'}</div>
-          <div class="text-xs text-gray-400 mt-0.5">${d.departement || ''} • ${d.circo ? d.circo + 'e' : ''} circ.</div>
+          <div class="text-xs text-gray-400 mt-0.5">${d.departement || ''}${d.circo ? ' • ' + d.circo + 'e circ.' : ''}</div>
           <span class="inline-block mt-1.5 text-xs px-2 py-0.5 rounded-full" 
                 style="background: ${grp.color}20; color: ${grp.color}; border: 1px solid ${grp.color}30">
             ${grp.short}
           </span>
         </div>
-        <button class="text-lg opacity-30 hover:opacity-100 transition follow-btn" data-id="${d.id || d.uid}">
+        <button class="text-lg opacity-30 hover:opacity-100 transition follow-btn" data-id="${d.uid}">
           ☆
         </button>
       </div>
