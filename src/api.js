@@ -52,7 +52,7 @@ export function getGroupInfo(groupe, groupeAbrege) {
   if (g.includes('ensemble')) return GROUPES['EPR']
   if (g.includes('républicain') || g.includes('lr')) return GROUPES['LR']
   if (g.includes('rassemblement')) return GROUPES['RN']
-  if (g.includes('liot')) return GROUPES['LIOT']
+  if (g.includes('liot') || g.includes('libertés') || g.includes('liberte')) return GROUPES['LIOT']
   if (g.includes('udi')) return GROUPES['UDI']
   if (g.includes('non-inscrit')) return GROUPES['NI']
 
