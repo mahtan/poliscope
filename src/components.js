@@ -1,5 +1,8 @@
 import { store } from './store.js'
-import { fetchDeputes, fetchScrutins, getGroupInfo, formatDate } from './api.js'
+import {
+  fetchDeputes, fetchScrutins, fetchDeputeDetail,
+  getGroupInfo, formatDate, formatDateRelative,
+} from './api.js'
 
 // ─── Header ───────────────────────────────────────────────
 export function Header() {
@@ -29,40 +32,39 @@ export function Header() {
 }
 
 // ─── Navigation ───────────────────────────────────────────
-export function NavBar() {
+export function NavBar(showBack) {
   const nav = document.createElement('nav')
   nav.className = 'glass border-b border-white/5'
   nav.innerHTML = `
     <div class="max-w-6xl mx-auto px-4 flex gap-6 text-sm">
-      <button class="nav-btn py-3 border-b-2 border-transparent hover:border-amber-500/50 transition data-active" data-view="home">
-        🏠 Accueil
-      </button>
-      <button class="nav-btn py-3 border-b-2 border-transparent hover:border-amber-500/50 transition" data-view="carte">
-        🗺️ Carte
-      </button>
-      <button class="nav-btn py-3 border-b-2 border-transparent hover:border-amber-500/50 transition" data-view="scrutins">
-        📊 Votes
-      </button>
-      <button class="nav-btn py-3 border-b-2 border-transparent hover:border-amber-500/50 transition" data-view="comparer">
-        ⚔️ Comparer
-      </button>
-      <button class="nav-btn py-3 border-b-2 border-transparent hover:border-amber-500/50 transition" data-view="flux">
-        📡 Flux
-      </button>
+      ${showBack
+        ? `<button class="nav-btn py-3 text-amber-400 border-b-2 border-amber-500 transition" data-nav="back">
+             ← Retour
+           </button>`
+        : ['🏠 Accueil', '🗺️ Carte', '📊 Votes', '⚔️ Comparer', '📡 Flux']
+            .map((label, i) =>
+              `<button class="nav-btn py-3 border-b-2 border-transparent hover:border-amber-500/50 transition text-gray-400" data-view="${['home','carte','scrutins','comparer','flux'][i]}">
+                ${label}
+               </button>`
+            ).join('')
+      }
     </div>
   `
-  nav.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.onclick = () => store.set({ view: btn.dataset.view })
-  })
-
-  store.subscribe((state) => {
+  if (showBack) {
+    nav.querySelector('[data-nav="back"]').onclick = () => store.set({ view: 'home', selectedDepute: null })
+  } else {
     nav.querySelectorAll('.nav-btn').forEach(btn => {
-      btn.classList.toggle('border-amber-500', btn.dataset.view === state.view)
-      btn.classList.toggle('text-amber-400', btn.dataset.view === state.view)
-      btn.classList.toggle('text-gray-400', btn.dataset.view !== state.view)
+      btn.onclick = () => store.set({ view: btn.dataset.view, selectedDepute: null })
     })
-  })
-
+    // Mark active
+    const view = store.get().view
+    nav.querySelectorAll('.nav-btn').forEach((btn) => {
+      if (btn.dataset.view === view) {
+        btn.classList.add('border-amber-500', 'text-amber-400')
+        btn.classList.remove('border-transparent', 'text-gray-400')
+      }
+    })
+  }
   return nav
 }
 
@@ -73,9 +75,7 @@ export function HomeView() {
 
   store.set({ loading: true })
   Promise.all([fetchDeputes(), fetchScrutins(20)])
-    .then(([deputes, scrutins]) => {
-      store.set({ deputes, scrutins, loading: false })
-    })
+    .then(([deputes, scrutins]) => store.set({ deputes, scrutins, loading: false }))
     .catch(() => store.set({ error: 'Impossible de charger les données', loading: false }))
 
   section.innerHTML = `
@@ -113,18 +113,15 @@ export function HomeView() {
     <div id="home-scrutins" class="mt-12 hidden"></div>
   `
 
-  // Search handler
   const searchInput = section.querySelector('#search-depute')
   const resultsDiv = section.querySelector('#home-results')
   const skeleton = section.querySelector('#home-skeleton')
 
   searchInput.addEventListener('input', () => {
-    const q = searchInput.value.toLowerCase().trim()
-    store.set({ searchQuery: q })
+    store.set({ searchQuery: searchInput.value.toLowerCase().trim() })
   })
 
   store.subscribe((state) => {
-    // Render search results
     const q = state.searchQuery
     if (q.length < 2) {
       resultsDiv.classList.add('hidden')
@@ -135,17 +132,27 @@ export function HomeView() {
     skeleton.classList.add('hidden')
     resultsDiv.classList.remove('hidden')
 
-    const filtered = state.deputes.filter(d => {
-      const nom = (d.nom || '').toLowerCase()
-      const groupe = (d.groupe || '').toLowerCase()
-      const dept = (d.departement || '').toLowerCase()
-      return nom.includes(q) || groupe.includes(q) || dept.includes(q)
-    }).slice(0, 30)
+    const filtered = state.deputes
+      .filter(d => {
+        const nom = (d.nom || '').toLowerCase()
+        const groupe = (d.groupe || '').toLowerCase()
+        const groupeAbr = (d.groupeAbrege || '').toLowerCase()
+        const dept = (d.departement || '').toLowerCase()
+        return nom.includes(q) || groupe.includes(q) || groupeAbr.includes(q) || dept.includes(q)
+      })
+      .slice(0, 30)
 
     resultsDiv.innerHTML = filtered.map(d => DeputeCard(d)).join('')
+
+    // Wire up click handlers
+    resultsDiv.querySelectorAll('[data-depute]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.follow-btn')) return
+        store.set({ view: 'detail-depute', selectedDepute: el.dataset.depute })
+      })
+    })
   })
 
-  // Load scrutins section
   setTimeout(async () => {
     const scrutinsDiv = section.querySelector('#home-scrutins')
     const state = store.get()
@@ -180,7 +187,7 @@ export function DeputeCard(d) {
         <div class="flex-1 min-w-0">
           <div class="font-semibold text-sm truncate">${d.prenom || ''} ${d.nom || 'Inconnu'}</div>
           <div class="text-xs text-gray-400 mt-0.5">${d.departement || ''}${d.circo ? ' • ' + d.circo + 'e circ.' : ''}</div>
-          <span class="inline-block mt-1.5 text-xs px-2 py-0.5 rounded-full" 
+          <span class="inline-block mt-1.5 text-xs px-2 py-0.5 rounded-full"
                 style="background: ${grp.color}20; color: ${grp.color}; border: 1px solid ${grp.color}30">
             ${grp.short}
           </span>
@@ -206,6 +213,129 @@ export function ScrutinRow(s) {
       </span>
     </div>
   `
+}
+
+// ─── Detail Depute View ───────────────────────────────────
+export function DetailDeputeView() {
+  const section = document.createElement('section')
+  section.className = 'max-w-6xl mx-auto px-4 py-8 fade-in'
+  const uid = store.get().selectedDepute
+
+  // Show loading skeleton
+  section.innerHTML = `
+    <div class="flex items-center justify-center py-20">
+      <div class="text-center">
+        <div class="text-4xl mb-4 animate-pulse">🔭</div>
+        <div class="text-gray-500">Chargement du député...</div>
+      </div>
+    </div>
+  `
+
+  // Load data
+  fetchDeputeDetail(uid).then((data) => {
+    const grp = getGroupInfo(data.groupe, data.groupeAbrege)
+    const stats = data.stats || {}
+    const pcPour = stats.totalVotes ? Math.round((stats.pour / stats.totalVotes) * 100) : 0
+    const pcContre = stats.totalVotes ? Math.round((stats.contre / stats.totalVotes) * 100) : 0
+    const pcAbst = stats.totalVotes ? Math.round((stats.abstention / stats.totalVotes) * 100) : 0
+
+    section.innerHTML = `
+      <div class="flex items-start gap-6 mb-8">
+        <div class="w-20 h-20 rounded-2xl flex items-center justify-center text-3xl font-bold text-white shrink-0 shadow-lg"
+             style="background: ${grp.color}">
+          ${data.prenom[0]}${data.nom[0]}
+        </div>
+        <div class="flex-1">
+          <div class="flex items-center gap-3 flex-wrap">
+            <h1 class="text-3xl font-bold">${data.prenom} ${data.nom}</h1>
+            <span class="px-3 py-1 rounded-full text-sm font-medium"
+                  style="background: ${grp.color}20; color: ${grp.color}; border: 1px solid ${grp.color}40">
+              ${grp.short}
+            </span>
+          </div>
+          <div class="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-400">
+            ${data.departement ? `<span>📍 ${data.departement}${data.circo ? ` — ${data.circo}e circonscription` : ''}</span>` : ''}
+            ${data.region ? `<span>🗺️ ${data.region}</span>` : ''}
+            ${data.profession ? `<span>💼 ${data.profession}</span>` : ''}
+          </div>
+        </div>
+        <button class="text-lg opacity-50 hover:opacity-100 transition follow-btn text-amber-400" data-id="${data.uid}">
+          ${store.get('suivis').includes(data.uid) ? '⭐' : '☆'}
+        </button>
+      </div>
+
+      ${stats.totalVotes > 0 ? `
+        <div class="grid grid-cols-3 gap-3 mb-8">
+          <div class="glass rounded-xl p-4 text-center">
+            <div class="text-2xl font-bold text-green-400">${stats.pour}</div>
+            <div class="text-xs text-gray-400 mt-1">Pour</div>
+            <div class="w-full gauge-bar mt-2">
+              <div class="gauge-fill bg-green-500" style="width:${pcPour}%"></div>
+            </div>
+          </div>
+          <div class="glass rounded-xl p-4 text-center">
+            <div class="text-2xl font-bold text-red-400">${stats.contre}</div>
+            <div class="text-xs text-gray-400 mt-1">Contre</div>
+            <div class="w-full gauge-bar mt-2">
+              <div class="gauge-fill bg-red-500" style="width:${pcContre}%"></div>
+            </div>
+          </div>
+          <div class="glass rounded-xl p-4 text-center">
+            <div class="text-2xl font-bold text-gray-400">${stats.abstention}</div>
+            <div class="text-xs text-gray-400 mt-1">Abstention</div>
+            <div class="w-full gauge-bar mt-2">
+              <div class="gauge-fill bg-gray-500" style="width:${pcAbst}%"></div>
+            </div>
+          </div>
+        </div>
+      ` : `
+        <div class="glass rounded-xl p-6 mb-8 text-center text-sm text-gray-500">
+          ⏳ Statistiques de vote en cours de chargement...
+        </div>
+      `}
+
+      <h2 class="text-xl font-bold mb-4">📋 Derniers votes</h2>
+      <div class="space-y-2">
+        ${(data.votes || []).length > 0
+          ? data.votes.slice(0, 30).map(v => `
+              <div class="glass rounded-lg px-4 py-3 flex items-center gap-3 fade-in">
+                <span class="text-lg">
+                  ${v.position === 'pour' ? '✅' : v.position === 'contre' ? '❌' : '⏸️'}
+                </span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm truncate">${v.titre || 'Scrutin'}</div>
+                  <div class="text-xs text-gray-500 mt-0.5">${formatDateRelative(v.dateScrutin)}</div>
+                </div>
+              </div>
+            `).join('')
+          : '<div class="text-center py-8 text-gray-500">Aucun vote trouvé — les données individuelles sont en cours de chargement</div>'
+        }
+      </div>
+    `
+
+    // Wire up follow button
+    section.querySelector('.follow-btn').onclick = () => {
+      const suivis = store.get().suivis
+      if (suivis.includes(uid)) {
+        store.set({ suivis: suivis.filter((id) => id !== uid) })
+      } else {
+        store.set({ suivis: [...suivis, uid] })
+      }
+    }
+  }).catch((err) => {
+    section.innerHTML = `
+      <div class="flex items-center justify-center py-20">
+        <div class="text-center">
+          <div class="text-4xl mb-4">😵</div>
+          <div class="text-red-400">Erreur : ${err.message}</div>
+          <button class="mt-4 text-sm text-amber-400 hover:underline" data-nav="home">← Retour</button>
+        </div>
+      </div>
+    `
+    section.querySelector('[data-nav="home"]').onclick = () => store.set({ view: 'home' })
+  })
+
+  return section
 }
 
 // ─── Carte View ───────────────────────────────────────────
@@ -238,11 +368,12 @@ export function ScrutinsView() {
     <h2 class="text-2xl font-bold mb-2">📊 Les scrutins</h2>
     <p class="text-gray-400 mb-6">Tous les votes importants de l'Assemblée.</p>
     <div id="scrutins-list" class="space-y-2">
-      <div class="text-center py-12 text-gray-500">Chargement...</div>
+      <div class="text-center py-12 text-gray-500 animate-pulse">Chargement...</div>
     </div>
   `
 
-  store.subscribe((state) => {
+  // Subscribe (clean up later if needed)
+  const unsub = store.subscribe((state) => {
     const list = section.querySelector('#scrutins-list')
     if (!list || state.loading) return
     if (state.scrutins.length === 0) {
@@ -254,6 +385,9 @@ export function ScrutinsView() {
       el.onclick = () => store.set({ view: 'detail-scrutin', selectedScrutin: el.dataset.scrutin })
     })
   })
+
+  // Clean up on destroy
+  setTimeout(() => unsub && unsub(), 100)
 
   return section
 }
@@ -308,7 +442,7 @@ export function FluxView() {
       `).join('')}
     </div>
     <div class="mt-6 text-center">
-      <span class="text-xs text-gray-500">Simulation pour la démo — les vraies données arrivent bientôt</span>
+      <span class="text-xs text-gray-500">Simulation pour la démo</span>
     </div>
   `
   return section
@@ -326,15 +460,28 @@ export function SuivisView() {
     </div>
   `
 
-  store.subscribe((state) => {
+  const unsub = store.subscribe((state) => {
     const list = section.querySelector('#suivis-list')
     if (!list) return
     if (state.suivis.length === 0) {
       list.innerHTML = '<div class="text-center py-12 text-gray-500">Tu ne suis personne pour le moment</div>'
     } else {
-      list.innerHTML = `<div class="card-grid">${state.suivis.map(id => DeputeCard({ id, ...{} })).join('')}</div>`
+      // Find followed deputies from store
+      const followed = state.deputes.filter(d => state.suivis.includes(d.uid))
+      if (followed.length > 0) {
+        list.innerHTML = `<div class="card-grid">${followed.map(d => DeputeCard(d)).join('')}</div>`
+        list.querySelectorAll('[data-depute]').forEach(el => {
+          el.addEventListener('click', (e) => {
+            if (e.target.closest('.follow-btn')) return
+            store.set({ view: 'detail-depute', selectedDepute: el.dataset.depute })
+          })
+        })
+      } else {
+        list.innerHTML = '<div class="text-center py-12 text-gray-500">Chargement des députés suivis...</div>'
+      }
     }
   })
 
+  setTimeout(() => unsub && unsub(), 100)
   return section
 }

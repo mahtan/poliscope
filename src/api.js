@@ -17,7 +17,14 @@ export async function fetchScrutins(limit = 50) {
   return limit ? scrutins.slice(0, limit) : scrutins
 }
 
-// Group colors — using the abbreviated names from AN data
+export async function fetchDeputeDetail(uid) {
+  const res = await fetch(`${API}/depute/${uid}`)
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || 'Erreur API')
+  return data
+}
+
+// Group colors
 export const GROUPES = {
   'LFI':  { label: 'LFI - NFP',       color: '#cc4125', short: 'LFI' },
   'GDR':  { label: 'GDR',              color: '#a50000', short: 'GDR' },
@@ -39,7 +46,6 @@ export function getGroupInfo(groupe, groupeAbrege) {
   const abr = groupeAbrege || ''
   if (GROUPES[abr]) return GROUPES[abr]
 
-  // Try to match from full name
   if (!groupe) return GROUPES['NI']
   const g = groupe.toLowerCase()
   if (g.includes('lfi') || g.includes('insoumis')) return GROUPES['LFI']
@@ -65,4 +71,16 @@ export function formatDate(dateStr) {
   return d.toLocaleDateString('fr-FR', {
     day: 'numeric', month: 'short', year: 'numeric',
   })
+}
+
+export function formatDateRelative(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  const now = new Date()
+  const diff = now - d
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+  if (days === 0) return "Aujourd'hui"
+  if (days === 1) return 'Hier'
+  if (days < 7) return `Il y a ${days} jours`
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
 }

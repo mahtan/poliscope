@@ -3,6 +3,7 @@ import {
   Header,
   NavBar,
   HomeView,
+  DetailDeputeView,
   CarteView,
   ScrutinsView,
   ComparerView,
@@ -15,6 +16,7 @@ const app = document.getElementById('app')
 // View renderer
 const views = {
   home: HomeView,
+  'detail-depute': DetailDeputeView,
   carte: CarteView,
   scrutins: ScrutinsView,
   comparer: ComparerView,
@@ -26,25 +28,26 @@ function render() {
   const state = store.get()
   app.innerHTML = ''
 
+  const isDetail = state.view === 'detail-depute' || state.view === 'detail-scrutin'
+
   app.appendChild(Header())
-  app.appendChild(NavBar())
+  app.appendChild(NavBar(isDetail))
 
   const viewFn = views[state.view]
   if (viewFn) {
     app.appendChild(viewFn())
   }
 
-  // Update follow count in header
+  // Update follow count
   const countEl = app.querySelector('[data-follow-count]')
-  if (countEl) countEl.textContent = state.suivis.length
+  if (countEl) countEl.textContent = store.get('suivis').length
 }
 
 // Initial render
 render()
 
-// Re-render on state changes
+// Re-render on view changes
 store.subscribe((state, prev) => {
-  // Only re-render on view changes or follow count
   if (state.view !== prev.view || state.suivis.length !== prev.suivis.length) {
     render()
   }
