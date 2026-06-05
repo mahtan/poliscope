@@ -52,42 +52,45 @@ function parseCSV(text) {
 }
 
 function findDepute(uid, scrutins) {
-  // Scrutins: find all votes by this deputy
   const votes = []
-  for (const s of scrutins.slice(0, 200)) {
-    const mise = s.miseAuPoint || {}
-    const dysf = mise.dysfonctionnement || {}
+  for (const s of scrutins.slice(0, 300)) {
+    const groupes = s.ventilationVotes?.organe?.groupes?.groupe
+    if (!groupes) continue
 
-    // Check pours, contres, abstentions arrays for this deputy
-    const checkList = (list) => {
-      if (!list) return false
-      const items = Array.isArray(list) ? list : [list]
-      return items.some((v) => v?.acteurRef === uid || v?.acteurRef?.['#text'] === uid)
+    const grpList = Array.isArray(groupes) ? groupes : [groupes]
+    let position = null
+
+    for (const grp of grpList) {
+      const dn = grp.vote?.decompteNominatif
+      if (!dn) continue
+
+      for (const [key, posName] of Object.entries({
+        pours: 'pour', contres: 'contre', abstentions: 'abstention'
+      })) {
+        const votant = dn[key]?.votant
+        if (!votant) continue
+        const list = Array.isArray(votant) ? votant : [votant]
+        if (list.some((v) => v && (v.acteurRef === uid || v.acteurRef?.['#text'] === uid))) {
+          position = posName
+          break
+        }
+      }
+      if (position) break
     }
 
-    let position = null
-    if (checkList(mise.pours)) position = 'pour'
-    else if (checkList(mise.contres)) position = 'contre'
-    else if (checkList(mise.abstentions)) position = 'abstention'
-
-    // If not in miseAuPoint, check decompositionNominatifs
+    // Also check miseAuPoint corrections
     if (!position) {
-      const vv = s.ventilationVotes?.organe?.groupes?.groupe
-      if (vv) {
-        const groupes = Array.isArray(vv) ? vv : [vv]
-        for (const g of groupes) {
-          const vote = g.vote
-          if (!vote) continue
-          for (const pos of ['pours', 'contres', 'abstentions']) {
-            const nominatif = vote.decompteNominatif?.[pos]?.votant
-            if (!nominatif) continue
-            const votants = Array.isArray(nominatif) ? nominatif : [nominatif]
-            if (votants.some((v) => v?.acteurRef === uid)) {
-              position = pos === 'pours' ? 'pour' : pos === 'contres' ? 'contre' : 'abstention'
-              break
-            }
+      const mise = s.miseAuPoint || {}
+      for (const [key, posName] of Object.entries({
+        pours: 'pour', contres: 'contre', abstentions: 'abstention'
+      })) {
+        const list = mise[key]
+        if (list) {
+          const arr = Array.isArray(list) ? list : [list]
+          if (arr.some((v) => v && (v.acteurRef === uid || v?.acteurRef?.['#text'] === uid))) {
+            position = posName
+            break
           }
-          if (position) break
         }
       }
     }
