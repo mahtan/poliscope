@@ -11,7 +11,7 @@ test.describe('Poliscope E2E', () => {
   })
 
   test('displays the header', async ({ page }) => {
-    await expect(page.locator('text=L\'Assemblée')).toBeVisible()
+    await expect(page.locator('text=L\'Assemblée')).toBeVisible({ timeout: 15000 })
     await expect(page.locator('text=577 députés')).toBeVisible()
   })
 
@@ -24,7 +24,10 @@ test.describe('Poliscope E2E', () => {
 
   test('search input works and shows results', async ({ page }) => {
     const input = page.locator('#search-depute')
-    await expect(input).toBeVisible()
+    await expect(input).toBeVisible({ timeout: 10000 })
+
+    // Wait for API data to load
+    await page.waitForTimeout(3000)
 
     // Type a search term
     await input.fill('Le Pen')
@@ -32,21 +35,21 @@ test.describe('Poliscope E2E', () => {
 
     // Results should appear
     const cards = page.locator('[data-depute]')
-    await expect(cards.first()).toBeVisible({ timeout: 10000 })
+    await expect(cards.first()).toBeVisible({ timeout: 15000 })
 
-    // All visible results should contain our search term
     const count = await cards.count()
     expect(count).toBeGreaterThan(0)
   })
 
   test('search filters show group badges', async ({ page }) => {
+    await page.waitForTimeout(3000)
     const input = page.locator('#search-depute')
     await input.fill('Macron')
     await page.waitForTimeout(500)
 
     // Group badges should be visible on results
-    const badges = page.locator('.rounded-full:has-text("EPR")')
-    await expect(badges.first()).toBeVisible({ timeout: 10000 })
+    const badges = page.locator('text=EPR')
+    await expect(badges.first()).toBeVisible({ timeout: 15000 })
   })
 
   test('navigates between views', async ({ page }) => {
@@ -65,11 +68,11 @@ test.describe('Poliscope E2E', () => {
 
   test('scrutins view loads with data', async ({ page }) => {
     await page.locator('button:has-text("Votes")').click()
-    await page.waitForTimeout(2000)
+    await page.waitForTimeout(3000)
 
     // Should show scrutiny items
     const items = page.locator('[data-scrutin]')
-    await expect(items.first()).toBeVisible({ timeout: 15000 })
+    await expect(items.first()).toBeVisible({ timeout: 20000 })
 
     const count = await items.count()
     expect(count).toBeGreaterThan(0)

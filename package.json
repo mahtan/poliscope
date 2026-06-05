@@ -15,7 +15,8 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "vite": "^6.0.0",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "wait-on": "^9.0.10"
   },
   "dependencies": {
     "adm-zip": "^0.5.17"

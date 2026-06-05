@@ -24,7 +24,7 @@ jobs:
       - name: Run unit tests
         run: npx vitest run
 
-  # ── E2E tests ────────────────────────────────────────
+  # ── E2E tests (against deployed Vercel) ──────────────
   e2e:
     runs-on: ubuntu-latest
     steps:
@@ -41,13 +41,11 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Build
-        run: npm run build
+      - name: Wait for Vercel deployment
+        run: npx wait-on https://poliscope-sepia.vercel.app --timeout 120000
 
       - name: Run E2E tests
         run: npx playwright test
-        env:
-          CI: true
 
       - name: Upload test results
         if: failure()
