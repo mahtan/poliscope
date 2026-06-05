@@ -1,6 +1,6 @@
 // Vercel Serverless Function — GET /api/scrutins
 import https from 'https'
-import zlib from 'node:zlib'
+import AdmZip from 'adm-zip'
 
 const SCRUTINS_URL =
   'https://data.assemblee-nationale.fr/static/openData/repository/17/loi/scrutins/Scrutins.json.zip'
@@ -19,64 +19,32 @@ function fetchBuffer(url) {
   })
 }
 
-function parseConcatenatedJSON(text) {
-  const objects = []
-  let i = 0
-  while (i < text.length) {
-    if (text[i] === '{') {
-      let depth = 0
-      let j = i
-      while (j < text.length) {
-        if (text[j] === '{') depth++
-        else if (text[j] === '}') {
-          depth--
-          if (depth === 0) break
-        }
-        j++
-      }
-      try {
-        objects.push(JSON.parse(text.slice(i, j + 1)))
-      } catch {}
-      i = j + 1
-    } else {
-      i++
+function extractScrutin(entry) {
+  try {
+    const obj = JSON.parse(entry.getData().toString('utf-8'))
+    const s = obj?.scrutin
+    if (!s) return null
+
+    const decompte = s.syntheseVote?.decompte || {}
+    const pour = parseInt(decompte.pour || '0', 10)
+    const contre = parseInt(decompte.contre || '0', 10)
+    const abstention = parseInt(decompte.abstentions || '0', 10)
+    const nbVotants = parseInt(s.syntheseVote?.nombreVotants || '0', 10)
+
+    return {
+      uid: s.uid || '',
+      numero: s.numero || '',
+      titre: s.titre || '',
+      objet: s.objet || '',
+      dateScrutin: s.dateScrutin || '',
+      sort: s.sort || '',
+      legislature: s.legislature || '',
+      demandeur: s.demandeur || '',
+      nbVotants,
+      votes: { pour, contre, abstention },
     }
-  }
-  return objects
-}
-
-function extractScrutin(obj) {
-  const s = obj?.scrutin
-  if (!s) return null
-
-  // Count votes by position
-  const votes = s.votes?.vote || []
-  const voteCount = Array.isArray(votes) ? votes.length : 0
-  const pour = Array.isArray(votes)
-    ? votes.filter((v) => v?.position === 'pour' || v?.position === 'favorable').length
-    : 0
-  const contre = Array.isArray(votes)
-    ? votes.filter((v) => v?.position === 'contre' || v?.position === 'défavorable').length
-    : 0
-  const abstention = Array.isArray(votes)
-    ? votes.filter((v) => v?.position === 'abstention').length
-    : 0
-
-  return {
-    uid: s.uid || '',
-    numero: s.numero || '',
-    titre: s.titre || '',
-    objet: s.objet || '',
-    dateScrutin: s.dateScrutin || '',
-    sort: s.sort || '',
-    legislature: s.legislature || '',
-    demandeur: s.demandeur || '',
-    nbVotants: voteCount,
-    votes: {
-      pour,
-      contre,
-      abstention,
-    },
+  } catch {
+    return null
   }
 }
 
@@ -87,20 +55,17 @@ export default async function handler(req, res) {
 
   const now = Date.now()
   if (cache && now - cacheTime < CACHE_TTL) {
-    return res.json({
-      scrutins: cache,
-      count: cache.length,
-      cached: true,
-    })
+    return res.json({ scrutins: cache, count: cache.length, cached: true })
   }
 
   try {
     const zipBuf = await fetchBuffer(SCRUTINS_URL)
-    const jsonBuf = zlib.unzipSync(zipBuf)
-    const objects = parseConcatenatedJSON(jsonBuf.toString('utf-8'))
-    const scrutins = objects.map(extractScrutin).filter(Boolean)
+    const zip = new AdmZip(zipBuf)
+    const entries = zip.getEntries().filter((e) => e.entryName.endsWith('.json'))
 
-    // Sort by date descending, newest first
+    const scrutins = entries.map(extractScrutin).filter(Boolean)
+
+    // Sort by date descending (newest first)
     scrutins.sort((a, b) => {
       if (a.dateScrutin < b.dateScrutin) return 1
       if (a.dateScrutin > b.dateScrutin) return -1
