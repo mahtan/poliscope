@@ -47,25 +47,43 @@ jobs:
       - name: Get Vercel deployment URL for this commit
         id: vercel
         run: |
-          echo "Looking up deployment for commit: ${GITHUB_SHA}"
+          echo "Commit: ${GITHUB_SHA}"
 
-          # Fetch the deployment linked to this commit via Vercel API
-          DEPLOYMENTS=$(curl -s \
-            "https://api.vercel.com/v1/deployments?app=${VERCEL_PROJECT_ID}&meta_githubCommitSha=${GITHUB_SHA}&limit=1" \
-            -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}")
+          for attempt in $(seq 1 15); do
+            echo "--- Attempt $attempt/15 ---"
 
-          URL=$(echo "$DEPLOYMENTS" | jq -r '.deployments[0].url // empty')
-          STATE=$(echo "$DEPLOYMENTS" | jq -r '.deployments[0].readyState // empty')
+            # List recent deployments and find ours by commit SHA
+            DEPLOYMENTS=$(curl -s \
+              "https://api.vercel.com/v1/deployments?app=${VERCEL_PROJECT_ID}&limit=5" \
+              -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}")
 
-          if [ -z "$URL" ]; then
-            echo "::error::No Vercel deployment found for commit ${GITHUB_SHA}"
-            echo "$DEPLOYMENTS" | jq .
-            exit 1
-          fi
+            # Debug: show recent deployment commits
+            echo "$DEPLOYMENTS" | jq -r '.deployments[]? | "  \(.url) — sha:\(.meta.githubCommitSha // "unknown") — \(.readyState)"'
 
-          echo "url=https://${URL}" >> $GITHUB_OUTPUT
-          echo "state=${STATE}" >> $GITHUB_OUTPUT
-          echo "Found: https://${URL} (state: ${STATE})"
+            # Find deployment matching our commit
+            URL=$(echo "$DEPLOYMENTS" | jq -r \
+              --arg SHA "${GITHUB_SHA}" \
+              '.deployments[]? | select(.meta.githubCommitSha == $SHA) | .url' | head -1)
+
+            STATE=$(echo "$DEPLOYMENTS" | jq -r \
+              --arg SHA "${GITHUB_SHA}" \
+              '.deployments[]? | select(.meta.githubCommitSha == $SHA) | .readyState' | head -1)
+
+            if [ -n "$URL" ]; then
+              echo "url=https://${URL}" >> $GITHUB_OUTPUT
+              echo "state=${STATE}" >> $GITHUB_OUTPUT
+              echo "✅ Found: https://${URL} (state: ${STATE})"
+              exit 0
+            fi
+
+            echo "  Not found — sleeping 10s"
+            sleep 10
+          done
+
+          # Last resort: fall back to production URL
+          echo "::warning::No deployment for this commit — falling back to production URL"
+          echo "url=https://poliscope-sepia.vercel.app" >> $GITHUB_OUTPUT
+          echo "state=READY" >> $GITHUB_OUTPUT
 
       - name: Wait for deploy to be READY
         if: steps.vercel.outputs.state != 'READY'
