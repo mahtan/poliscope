@@ -7,7 +7,7 @@ export default defineConfig({
   fullyParallel: false,
   retries: 1,
   use: {
-    baseURL: 'https://poliscope-sepia.vercel.app',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'https://poliscope-sepia.vercel.app',
     headless: true,
     viewport: { width: 1280, height: 720 },
   },
