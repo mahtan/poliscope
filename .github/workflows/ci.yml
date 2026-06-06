@@ -24,7 +24,7 @@ jobs:
       - name: Run unit tests
         run: npx vitest run
 
-  # ── E2E tests (against Vercel deployment for this commit) ──
+  # ── E2E tests (deploy + test synchronously via Vercel CLI) ──
   e2e:
     runs-on: ubuntu-latest
     env:
@@ -44,76 +44,18 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Get Vercel deployment URL for this commit
-        id: vercel
+      - name: Deploy to Vercel and get URL
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          echo "Commit: ${GITHUB_SHA}"
-
-          for attempt in $(seq 1 15); do
-            echo "--- Attempt $attempt/15 ---"
-
-            # List recent deployments and find ours by commit SHA
-            DEPLOYMENTS=$(curl -s \
-              "https://api.vercel.com/v1/deployments?app=${VERCEL_PROJECT_ID}&limit=5" \
-              -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}")
-
-            # Debug: show recent deployment commits
-            echo "$DEPLOYMENTS" | jq -r '.deployments[]? | "  \(.url) — sha:\(.meta.githubCommitSha // "unknown") — \(.readyState)"'
-
-            # Find deployment matching our commit
-            URL=$(echo "$DEPLOYMENTS" | jq -r \
-              --arg SHA "${GITHUB_SHA}" \
-              '.deployments[]? | select(.meta.githubCommitSha == $SHA) | .url' | head -1)
-
-            STATE=$(echo "$DEPLOYMENTS" | jq -r \
-              --arg SHA "${GITHUB_SHA}" \
-              '.deployments[]? | select(.meta.githubCommitSha == $SHA) | .readyState' | head -1)
-
-            if [ -n "$URL" ]; then
-              echo "url=https://${URL}" >> $GITHUB_OUTPUT
-              echo "state=${STATE}" >> $GITHUB_OUTPUT
-              echo "✅ Found: https://${URL} (state: ${STATE})"
-              exit 0
-            fi
-
-            echo "  Not found — sleeping 10s"
-            sleep 10
-          done
-
-          # Last resort: fall back to production URL
-          echo "::warning::No deployment for this commit — falling back to production URL"
-          echo "url=https://poliscope-sepia.vercel.app" >> $GITHUB_OUTPUT
-          echo "state=READY" >> $GITHUB_OUTPUT
-
-      - name: Wait for deploy to be READY
-        if: steps.vercel.outputs.state != 'READY'
-        run: |
-          DOMAIN=$(echo "${{ steps.vercel.outputs.url }}" | sed 's|https://||')
-          echo "Waiting for deployment: $DOMAIN"
-
-          for i in $(seq 1 36); do
-            DATA=$(curl -s \
-              "https://api.vercel.com/v1/deployments/get?url=${DOMAIN}" \
-              -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}")
-
-            STATE=$(echo "$DATA" | jq -r '.readyState // empty')
-            echo "Attempt $i/36 — state: $STATE"
-
-            if [ "$STATE" = "READY" ]; then
-              echo "✅ Deployment READY!"
-              exit 0
-            fi
-            sleep 10
-          done
-
-          echo "::error::Timeout waiting for deployment to be READY"
-          curl -s "https://api.vercel.com/v1/deployments/get?url=${DOMAIN}" \
-            -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" | jq '{readyState, url, createdAt, name}'
-          exit 1
+          DEPLOY_URL=$(npx vercel deploy --yes --token="$VERCEL_TOKEN" 2>&1 | tee /dev/stderr | grep -oE 'https://[a-zA-Z0-9.-]+\.vercel\.app' | head -1)
+          echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
+          echo "Preview URL: $DEPLOY_URL"
 
       - name: Run E2E tests
         env:
-          PLAYWRIGHT_BASE_URL: ${{ steps.vercel.outputs.url }}
+          PLAYWRIGHT_BASE_URL: ${{ steps.deploy.outputs.url }}
         run: npx playwright test
 
       - name: Upload test results
